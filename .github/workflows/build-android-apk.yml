@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/build-android-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attendance-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android scaffold
+        run: |
+          rm -rf /tmp/five_star_attendance_android
+          flutter create --platforms=android --org au.com.fivestaraccess --project-name five_star_attendance /tmp/five_star_attendance_android
+          rm -rf mobile/android
+          cp -R /tmp/five_star_attendance_android/android mobile/android
+          python3 mobile/tool/prepare_android.py
+      - name: Install Flutter packages
+        working-directory: mobile
+        run: flutter pub get
+      - name: Analyze mobile source
+        working-directory: mobile
+        run: flutter analyze
+      - name: Build debug APK
+        working-directory: mobile
+        env:
+          ATTENDANCE_API_BASE_URL: ${{ vars.ATTENDANCE_API_BASE_URL }}
+        run: |
+          API_URL="${ATTENDANCE_API_BASE_URL:-https://attendance.example.com/api/mobile}"
+          flutter build apk --debug --dart-define=API_BASE_URL="$API_URL"
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: five-star-attendance-debug-apk
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 1
