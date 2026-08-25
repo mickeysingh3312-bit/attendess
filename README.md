@@ -4,7 +4,7 @@ Automatic site attendance system using Airtable project locations, mobile geofen
 
 ## Components
 
-- `backend/` - Laravel 13 API and web admin portal
+- `backend/` - Laravel 12 API and web admin portal (PHP 8.2)
 - `mobile/` - Flutter mobile app foundation with Android native geofencing integration
 - `docs/` - architecture, API, and setup documentation
 
