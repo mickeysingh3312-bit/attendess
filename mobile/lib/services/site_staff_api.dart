@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
+import 'document_bridge.dart';
 
 class SiteStaffApi {
   Future<Map<String, dynamic>> profile() async {
@@ -25,7 +25,7 @@ class SiteStaffApi {
   Future<Map<String, dynamic>> saveProfile({
     required bool updating,
     required Map<String, String> fields,
-    required Map<String, PlatformFile?> files,
+    required Map<String, PickedDocument?> files,
     required Map<String, bool> removeFlags,
   }) async {
     final token = await _token();
@@ -43,11 +43,11 @@ class SiteStaffApi {
 
     for (final entry in files.entries) {
       final file = entry.value;
-      if (file == null || file.path == null || file.path!.isEmpty) continue;
+      if (file == null || file.path.isEmpty) continue;
       request.files.add(
         await http.MultipartFile.fromPath(
           entry.key,
-          file.path!,
+          file.path,
           filename: file.name,
         ),
       );
