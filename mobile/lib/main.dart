@@ -1,19 +1,54 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:ui';
 
-import 'screens/home_screen.dart';
+import 'package:flutter/material.dart';
+
 import 'screens/login_screen.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final preferences = await SharedPreferences.getInstance();
-  runApp(AttendanceApp(loggedIn: preferences.getString('token') != null));
+
+  // Keep framework/async Dart errors inside Flutter instead of allowing an
+  // unexpected screen initialization problem to terminate the user flow.
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Unhandled app error: $error');
+    debugPrintStack(stackTrace: stack);
+    return true;
+  };
+  ErrorWidget.builder = (details) => Material(
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 52),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'The app could not load this screen.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    details.exceptionAsString(),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+  runApp(const AttendanceApp());
 }
 
 class AttendanceApp extends StatelessWidget {
-  final bool loggedIn;
-
-  const AttendanceApp({super.key, required this.loggedIn});
+  const AttendanceApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +77,9 @@ class AttendanceApp extends StatelessWidget {
           fillColor: Colors.white,
         ),
       ),
-      home: loggedIn ? const HomeScreen() : const LoginScreen(),
+      // Safe-start: always enter through the OTP screen. This prevents restored
+      // stale session data from eagerly booting Home/Profile on process start.
+      home: const LoginScreen(),
     );
   }
 }
