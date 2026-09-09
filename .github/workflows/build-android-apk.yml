@@ -23,7 +23,7 @@ concurrency:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android scaffold
+      - name: Generate clean Android scaffold
         run: |
           set -euo pipefail
           rm -rf /tmp/five_star_attendance_android
@@ -66,10 +66,40 @@ jobs:
           API_URL="${ATTENDANCE_API_BASE_URL:-https://attendance.example.com/api/mobile}"
           flutter build apk --release --dart-define=API_BASE_URL="$API_URL"
 
+      - name: Android launch smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            APK="mobile/build/app/outputs/flutter-apk/app-release.apk"
+            PACKAGE="au.com.fivestaraccess.five_star_attendance"
+            adb install -r "$APK"
+            adb logcat -c
+            adb shell am force-stop "$PACKAGE" || true
+            adb shell am start -W -n "$PACKAGE/.MainActivity"
+            sleep 10
+            PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
+            echo "App PID: $PID"
+            if [ -z "$PID" ]; then
+              echo "App process exited after launch. Crash log follows:"
+              adb logcat -d -v time | grep -E "FATAL EXCEPTION|AndroidRuntime|five_star_attendance|flutter" | tail -n 250 || true
+              exit 1
+            fi
+            if ! adb shell dumpsys activity activities | grep -q "$PACKAGE"; then
+              echo "App process exists but activity is not present. Relevant log follows:"
+              adb logcat -d -v time | grep -E "FATAL EXCEPTION|AndroidRuntime|five_star_attendance|flutter" | tail -n 250 || true
+              exit 1
+            fi
+            echo "Runtime startup smoke test passed."
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: five-star-attendance-site-staff-v0.4.0
+          name: five-star-attendance-clean-v0.4.2
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
