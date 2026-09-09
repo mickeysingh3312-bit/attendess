@@ -15,6 +15,10 @@ permissions = ['    <uses-permission android:name="android.permission.INTERNET" 
 for permission in permissions:
     if permission not in text: text = text.replace(">", ">\n" + permission, 1)
 text = text.replace('android:label="five_star_attendance"', 'android:label="Five Star Attendance"')
+# Prevent Android/Samsung cloud restore from reviving stale login/session state
+# after an uninstall/reinstall while we are stabilizing the startup path.
+if 'android:allowBackup=' not in text:
+    text = text.replace('<application\n', '<application\n        android:allowBackup="false"\n        android:fullBackupContent="false"\n', 1)
 receivers = '''\n        <receiver android:name=".GeofenceBroadcastReceiver" android:exported="false" />\n        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="false">\n            <intent-filter>\n                <action android:name="android.intent.action.BOOT_COMPLETED" />\n                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />\n            </intent-filter>\n        </receiver>\n'''
 if 'android:name=".GeofenceBroadcastReceiver"' not in text: text = text.replace("    </application>", receivers + "    </application>")
 manifest.write_text(text)
