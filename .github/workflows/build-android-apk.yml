@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -74,26 +74,13 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            set -eu
-            APK="mobile/build/app/outputs/flutter-apk/app-release.apk"
-            PACKAGE="au.com.fivestaraccess.five_star_attendance"
-            adb install -r "$APK"
+            adb install -r mobile/build/app/outputs/flutter-apk/app-release.apk
             adb logcat -c
-            adb shell am force-stop "$PACKAGE" || true
-            adb shell am start -W -n "$PACKAGE/.MainActivity"
+            adb shell am force-stop au.com.fivestaraccess.five_star_attendance || true
+            adb shell am start -W -n au.com.fivestaraccess.five_star_attendance/.MainActivity
             sleep 10
-            PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' || true)"
-            echo "App PID: $PID"
-            if [ -z "$PID" ]; then
-              echo "App process exited after launch. Crash log follows:"
-              adb logcat -d -v time | grep -E "FATAL EXCEPTION|AndroidRuntime|five_star_attendance|flutter" | tail -n 250 || true
-              exit 1
-            fi
-            if ! adb shell dumpsys activity activities | grep -q "$PACKAGE"; then
-              echo "App process exists but activity is not present. Relevant log follows:"
-              adb logcat -d -v time | grep -E "FATAL EXCEPTION|AndroidRuntime|five_star_attendance|flutter" | tail -n 250 || true
-              exit 1
-            fi
+            test -n "$(adb shell pidof au.com.fivestaraccess.five_star_attendance | tr -d '\r' || true)" || { echo "App process exited after launch"; adb logcat -d -v time | grep -E "FATAL EXCEPTION|AndroidRuntime|five_star_attendance|flutter" | tail -n 250 || true; exit 1; }
+            adb shell dumpsys activity activities | grep -q au.com.fivestaraccess.five_star_attendance || { echo "App activity is not present after launch"; adb logcat -d -v time | grep -E "FATAL EXCEPTION|AndroidRuntime|five_star_attendance|flutter" | tail -n 250 || true; exit 1; }
             echo "Runtime startup smoke test passed."
 
       - name: Upload APK
