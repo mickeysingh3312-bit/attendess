@@ -15,8 +15,6 @@ permissions = ['    <uses-permission android:name="android.permission.INTERNET" 
 for permission in permissions:
     if permission not in text: text = text.replace(">", ">\n" + permission, 1)
 text = text.replace('android:label="five_star_attendance"', 'android:label="Five Star Attendance"')
-# Prevent Android/Samsung cloud restore from reviving stale login/session state
-# after an uninstall/reinstall while we are stabilizing the startup path.
 if 'android:allowBackup=' not in text:
     text = text.replace('<application\n', '<application\n        android:allowBackup="false"\n        android:fullBackupContent="false"\n', 1)
 receivers = '''\n        <receiver android:name=".GeofenceBroadcastReceiver" android:exported="false" />\n        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="false">\n            <intent-filter>\n                <action android:name="android.intent.action.BOOT_COMPLETED" />\n                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />\n            </intent-filter>\n        </receiver>\n'''
@@ -25,7 +23,14 @@ manifest.write_text(text)
 kts = ANDROID / "app/build.gradle.kts"
 if kts.exists():
     gradle = kts.read_text()
-    if 'play-services-location' not in gradle: gradle += '''\n\ndependencies {\n    implementation("com.google.android.gms:play-services-location:21.3.0")\n    implementation("androidx.work:work-runtime-ktx:2.10.1")\n}\n'''
+    if 'play-services-location' not in gradle:
+        gradle += '''\n\ndependencies {\n    implementation("com.google.android.gms:play-services-location:21.3.0")\n    implementation("androidx.work:work-runtime-ktx:2.10.1")\n}\n'''
+    # WorkManager/Room uses generated classes that are reached through startup
+    # reflection. On the generated Flutter Android scaffold, R8 was stripping
+    # the WorkDatabase_Impl constructor in release mode, causing the app to
+    # terminate before MainActivity rendered. Disable code/resource shrinking
+    # for this APK so the required AndroidX startup classes remain intact.
+    gradle += '''\n\nandroid {\n    buildTypes {\n        getByName("release") {\n            isMinifyEnabled = false\n            isShrinkResources = false\n        }\n    }\n}\n'''
     kts.write_text(gradle)
 else: raise SystemExit("Could not find app/build.gradle.kts")
 print("Android scaffold prepared")
