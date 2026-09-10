@@ -1,7 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppConfig {
-  static const appVersion = '0.4.1';
+  static const appVersion = '0.4.3';
   static const defaultApiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'https://attendance.example.com/api/mobile',
