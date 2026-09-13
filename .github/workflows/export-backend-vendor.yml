@@ -1,0 +1,40 @@
+name: Export Backend Vendor
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/export-backend-vendor.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Prepare runtime dependencies
+        working-directory: backend
+        run: |
+          composer require laravel/tinker:^2.10.1 --no-update --no-interaction
+          composer install --no-scripts --no-interaction --prefer-dist
+
+      - name: Upload vendor
+        uses: actions/upload-artifact@v4
+        with:
+          name: attendance-backend-vendor-php84
+          path: backend/vendor
+          if-no-files-found: error
+          retention-days: 1
