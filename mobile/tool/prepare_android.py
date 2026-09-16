@@ -11,7 +11,7 @@ PACKAGE_DIR.mkdir(parents=True, exist_ok=True)
 for source in INTEGRATION.glob("*.kt"): shutil.copy2(source, PACKAGE_DIR / source.name)
 manifest = ANDROID / "app/src/main/AndroidManifest.xml"
 text = manifest.read_text()
-permissions = ['    <uses-permission android:name="android.permission.INTERNET" />','    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />','    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />','    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />','    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />']
+permissions = ['    <uses-permission android:name="android.permission.INTERNET" />','    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />','    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />','    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />','    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />','    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />']
 for permission in permissions:
     if permission not in text: text = text.replace(">", ">\n" + permission, 1)
 text = text.replace('android:label="five_star_attendance"', 'android:label="Five Star Attendance"')
