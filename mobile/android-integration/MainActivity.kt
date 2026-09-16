@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
@@ -67,6 +68,16 @@ class MainActivity : FlutterActivity() {
                 }
                 "openLocationSettings" -> {
                     startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                    result.success(true)
+                }
+                "openBatterySettings" -> {
+                    try {
+                        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        })
+                    } catch (_: Exception) {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    }
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -229,11 +240,18 @@ class MainActivity : FlutterActivity() {
                 0,
             ) != Settings.Secure.LOCATION_MODE_OFF
         }
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        val batteryOptimizationDisabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            powerManager.isIgnoringBatteryOptimizations(packageName)
+        } else {
+            true
+        }
         return mapOf(
             "fineLocation" to fine,
             "backgroundLocation" to background,
             "notifications" to notifications,
             "locationServices" to services,
+            "batteryOptimizationDisabled" to batteryOptimizationDisabled,
         )
     }
 
