@@ -12,21 +12,36 @@ class SiteStaffApi {
   Future<Map<String, dynamic>> profile() async {
     final token = await _token();
     final baseUrl = await AppConfig.apiBaseUrl();
-    try {
-      final response = await http
-          .get(
-            Uri.parse('$baseUrl/site-staff/profile'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Accept': 'application/json',
-            },
-          )
-          .timeout(const Duration(seconds: 35));
-      return _decode(response.statusCode, response.body);
-    } catch (e) {
-      if (_isNetworkError(e)) throw Exception(_networkMessage(e));
-      rethrow;
+    Object? lastError;
+
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        final response = await http
+            .get(
+              Uri.parse('$baseUrl/site-staff/profile'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache',
+              },
+            )
+            .timeout(const Duration(seconds: 25));
+
+        if (response.statusCode >= 500 && attempt < 3) {
+          await Future<void>.delayed(Duration(milliseconds: 500 * attempt * attempt));
+          continue;
+        }
+        return _decode(response.statusCode, response.body);
+      } catch (e) {
+        if (!_isNetworkError(e)) rethrow;
+        lastError = e;
+        if (attempt < 3) {
+          await Future<void>.delayed(Duration(milliseconds: 500 * attempt * attempt));
+        }
+      }
     }
+
+    throw Exception(_networkMessage(lastError ?? Exception('network unavailable')));
   }
 
   Future<Map<String, dynamic>> saveProfile({
@@ -94,10 +109,12 @@ class SiteStaffApi {
         text.contains('failed host lookup') ||
         text.contains('connection reset') ||
         text.contains('connection refused') ||
+        text.contains('connection closed') ||
         text.contains('network is unreachable') ||
         text.contains('timed out') ||
         text.contains('timeout') ||
-        text.contains('handshake');
+        text.contains('handshake') ||
+        text.contains('clientexception');
   }
 
   String _networkMessage(Object error) {
