@@ -1,11 +1,26 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 
+class ApiException implements Exception {
+  final String message;
+  final bool network;
+
+  const ApiException(this.message, {this.network = false});
+
+  @override
+  String toString() => message;
+}
+
 class ApiClient {
+  static const _requestTimeout = Duration(seconds: 22);
+  static const _cachePrefix = 'api_cache_';
+
   Future<String?> token() async =>
       (await SharedPreferences.getInstance()).getString('token');
 
@@ -14,19 +29,20 @@ class ApiClient {
     String deviceUuid,
   ) async {
     final baseUrl = await AppConfig.apiBaseUrl();
-    final response = await http
-        .post(
-          Uri.parse('$baseUrl/auth/request-otp'),
-          headers: const {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: jsonEncode({
-            'email': email.trim().toLowerCase(),
-            'device_uuid': deviceUuid,
-          }),
-        )
-        .timeout(const Duration(seconds: 25));
+    final response = await _networkRequest(
+      () => http.post(
+        Uri.parse('$baseUrl/auth/request-otp'),
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email.trim().toLowerCase(),
+          'device_uuid': deviceUuid,
+        }),
+      ),
+      attempts: 1,
+    );
 
     return _decodeResponse(response);
   }
@@ -37,27 +53,28 @@ class ApiClient {
     String deviceUuid,
   ) async {
     final baseUrl = await AppConfig.apiBaseUrl();
-    final response = await http
-        .post(
-          Uri.parse('$baseUrl/auth/verify-otp'),
-          headers: const {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: jsonEncode({
-            'email': email.trim().toLowerCase(),
-            'otp': otp.trim(),
-            'device_uuid': deviceUuid,
-            'platform': 'android',
-            'app_version': AppConfig.appVersion,
-          }),
-        )
-        .timeout(const Duration(seconds: 25));
+    final response = await _networkRequest(
+      () => http.post(
+        Uri.parse('$baseUrl/auth/verify-otp'),
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email.trim().toLowerCase(),
+          'otp': otp.trim(),
+          'device_uuid': deviceUuid,
+          'platform': 'android',
+          'app_version': AppConfig.appVersion,
+        }),
+      ),
+      attempts: 1,
+    );
 
     final data = _decodeResponse(response);
     final authToken = data['token']?.toString();
     if (authToken == null || authToken.isEmpty) {
-      throw Exception('The server did not return a login token.');
+      throw const ApiException('The server did not return a login token. Please try again.');
     }
 
     final preferences = await SharedPreferences.getInstance();
@@ -69,24 +86,71 @@ class ApiClient {
   Future<Map<String, dynamic>> getJson(String path) async {
     final authToken = await token();
     if (authToken == null || authToken.isEmpty) {
-      throw Exception('Please sign in again.');
+      throw const ApiException('Please sign in again.');
     }
 
     final baseUrl = await AppConfig.apiBaseUrl();
-    final response = await http
-        .get(
-          Uri.parse('$baseUrl$path'),
-          headers: {
-            'Authorization': 'Bearer $authToken',
-            'Accept': 'application/json',
-          },
-        )
-        .timeout(const Duration(seconds: 25));
+    final response = await _networkRequest(
+      () => http.get(
+        Uri.parse('$baseUrl$path'),
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Accept': 'application/json',
+        },
+      ),
+      attempts: 3,
+    );
 
     if (response.statusCode == 401) {
-      throw Exception('Your session has expired. Please sign in again.');
+      throw const ApiException('Your session has expired. Please sign in again.');
     }
     return _decodeResponse(response);
+  }
+
+  Future<Map<String, dynamic>> getJsonCached(
+    String path, {
+    required String cacheKey,
+  }) async {
+    try {
+      final data = await getJson(path);
+      await writeCache(cacheKey, data);
+      return <String, dynamic>{
+        'data': data,
+        'from_cache': false,
+      };
+    } on ApiException catch (e) {
+      if (!e.network) rethrow;
+      final cached = await readCache(cacheKey);
+      if (cached == null) rethrow;
+      return <String, dynamic>{
+        'data': cached['data'] ?? cached,
+        'from_cache': true,
+        'cached_at': cached['cached_at'],
+        'network_message': e.message,
+      };
+    }
+  }
+
+  Future<void> writeCache(String key, Map<String, dynamic> data) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(
+      '$_cachePrefix$key',
+      jsonEncode({
+        'cached_at': DateTime.now().toUtc().toIso8601String(),
+        'data': data,
+      }),
+    );
+  }
+
+  Future<Map<String, dynamic>?> readCache(String key) async {
+    final preferences = await SharedPreferences.getInstance();
+    final raw = preferences.getString('$_cachePrefix$key');
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {}
+    return null;
   }
 
   Future<void> logout() async {
@@ -95,18 +159,78 @@ class ApiClient {
 
     try {
       final baseUrl = await AppConfig.apiBaseUrl();
-      await http
-          .post(
-            Uri.parse('$baseUrl/logout'),
-            headers: {
-              'Authorization': 'Bearer $authToken',
-              'Accept': 'application/json',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
+      await _networkRequest(
+        () => http.post(
+          Uri.parse('$baseUrl/logout'),
+          headers: {
+            'Authorization': 'Bearer $authToken',
+            'Accept': 'application/json',
+          },
+        ),
+        attempts: 1,
+        timeout: const Duration(seconds: 10),
+      );
     } catch (_) {
-      // Local sign-out must still work if the network is unavailable.
+      // Local sign-out must still work when the server or network is unavailable.
     }
+  }
+
+  Future<http.Response> _networkRequest(
+    Future<http.Response> Function() request, {
+    int attempts = 1,
+    Duration timeout = _requestTimeout,
+  }) async {
+    Object? lastError;
+
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await request().timeout(timeout);
+      } on TimeoutException catch (e) {
+        lastError = e;
+      } on SocketException catch (e) {
+        lastError = e;
+      } on HandshakeException catch (e) {
+        lastError = e;
+      } on http.ClientException catch (e) {
+        lastError = e;
+      } catch (e) {
+        if (!_looksLikeNetworkError(e)) rethrow;
+        lastError = e;
+      }
+
+      if (attempt < attempts) {
+        await Future<void>.delayed(Duration(milliseconds: 600 * attempt));
+      }
+    }
+
+    throw ApiException(
+      _networkMessage(lastError),
+      network: true,
+    );
+  }
+
+  bool _looksLikeNetworkError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('socket') ||
+        text.contains('failed host lookup') ||
+        text.contains('connection reset') ||
+        text.contains('connection refused') ||
+        text.contains('connection closed') ||
+        text.contains('network is unreachable') ||
+        text.contains('timed out') ||
+        text.contains('timeout') ||
+        text.contains('handshake');
+  }
+
+  String _networkMessage(Object? error) {
+    final text = error?.toString().toLowerCase() ?? '';
+    if (text.contains('failed host lookup') || text.contains('network is unreachable')) {
+      return 'We could not reach the attendance server. Check your internet connection and try again. Your automatic attendance events will keep retrying in the background.';
+    }
+    if (text.contains('timed out') || text.contains('timeout')) {
+      return 'The attendance server is taking longer than expected. Please try again in a moment. Automatic attendance events remain queued for retry.';
+    }
+    return 'The attendance server is temporarily unavailable. Please try again shortly. Automatic attendance events will retry in the background.';
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
@@ -116,7 +240,7 @@ class ApiClient {
         final decoded = jsonDecode(response.body);
         if (decoded is Map<String, dynamic>) data = decoded;
       } catch (_) {
-        // A non-JSON response is handled by the generic status message below.
+        // Non-JSON responses are handled by the generic status message below.
       }
     }
 
@@ -137,7 +261,13 @@ class ApiClient {
       }
     }
     message ??= data['message']?.toString();
-    message ??= 'Request failed (${response.statusCode}). Please try again.';
-    throw Exception(message);
+
+    if (response.statusCode >= 500) {
+      message ??= 'The attendance server is temporarily unavailable. Please try again shortly.';
+    } else {
+      message ??= 'Request failed (${response.statusCode}). Please try again.';
+    }
+
+    throw ApiException(message);
   }
 }
