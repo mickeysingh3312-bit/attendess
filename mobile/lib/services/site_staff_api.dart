@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,16 +12,21 @@ class SiteStaffApi {
   Future<Map<String, dynamic>> profile() async {
     final token = await _token();
     final baseUrl = await AppConfig.apiBaseUrl();
-    final response = await http
-        .get(
-          Uri.parse('$baseUrl/site-staff/profile'),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Accept': 'application/json',
-          },
-        )
-        .timeout(const Duration(seconds: 35));
-    return _decode(response.statusCode, response.body);
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/site-staff/profile'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 35));
+      return _decode(response.statusCode, response.body);
+    } catch (e) {
+      if (_isNetworkError(e)) throw Exception(_networkMessage(e));
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> saveProfile({
@@ -53,9 +60,18 @@ class SiteStaffApi {
       );
     }
 
-    final streamed = await request.send().timeout(const Duration(seconds: 90));
-    final response = await http.Response.fromStream(streamed);
-    return _decode(response.statusCode, response.body);
+    try {
+      final streamed = await request.send().timeout(const Duration(seconds: 90));
+      final response = await http.Response.fromStream(streamed);
+      return _decode(response.statusCode, response.body);
+    } catch (e) {
+      if (_isNetworkError(e)) {
+        throw Exception(
+          'We could not save your profile because the connection was interrupted. Your existing profile is unchanged. Please reconnect and try again.',
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<String> _token() async {
@@ -64,6 +80,32 @@ class SiteStaffApi {
       throw Exception('Please sign in again.');
     }
     return token;
+  }
+
+  bool _isNetworkError(Object error) {
+    if (error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException ||
+        error is http.ClientException) {
+      return true;
+    }
+    final text = error.toString().toLowerCase();
+    return text.contains('socket') ||
+        text.contains('failed host lookup') ||
+        text.contains('connection reset') ||
+        text.contains('connection refused') ||
+        text.contains('network is unreachable') ||
+        text.contains('timed out') ||
+        text.contains('timeout') ||
+        text.contains('handshake');
+  }
+
+  String _networkMessage(Object error) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('timed out') || text.contains('timeout')) {
+      return 'The attendance server is taking longer than expected. Please try again in a moment.';
+    }
+    return 'We could not reach the attendance server. Check your internet connection and try again.';
   }
 
   Map<String, dynamic> _decode(int statusCode, String body) {
@@ -92,7 +134,9 @@ class SiteStaffApi {
       }
     }
     message ??= data['message']?.toString();
-    message ??= 'Request failed ($statusCode). Please try again.';
+    message ??= statusCode >= 500
+        ? 'The attendance server is temporarily unavailable. Please try again shortly.'
+        : 'Request failed ($statusCode). Please try again.';
     throw Exception(message);
   }
 }
