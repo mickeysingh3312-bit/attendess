@@ -20,9 +20,34 @@ class ApiException implements Exception {
 class ApiClient {
   static const _requestTimeout = Duration(seconds: 22);
   static const _cachePrefix = 'api_cache_';
+  static const _retryableStatusCodes = {502, 503, 504};
 
   Future<String?> token() async =>
       (await SharedPreferences.getInstance()).getString('token');
+
+  static String friendlyError(Object error) {
+    if (error is ApiException) return error.message;
+
+    final raw = error.toString().replaceFirst('Exception: ', '').trim();
+    final text = raw.toLowerCase();
+    if (text.contains('socket') ||
+        text.contains('failed host lookup') ||
+        text.contains('network is unreachable') ||
+        text.contains('connection reset') ||
+        text.contains('connection refused') ||
+        text.contains('connection closed') ||
+        text.contains('clientexception') ||
+        text.contains('handshake')) {
+      return 'We could not reach the attendance server. Check your internet connection and try again. Automatic attendance events will keep retrying in the background.';
+    }
+    if (text.contains('timed out') || text.contains('timeout')) {
+      return 'The attendance server is taking longer than expected. Please try again in a moment. Automatic attendance events remain queued for retry.';
+    }
+    if (raw.isEmpty || raw.length > 220 || raw.contains('dart:') || raw.contains('package:')) {
+      return 'Something went wrong while contacting the attendance service. Please try again.';
+    }
+    return raw;
+  }
 
   Future<Map<String, dynamic>> requestOtp(
     String email,
@@ -96,9 +121,11 @@ class ApiClient {
         headers: {
           'Authorization': 'Bearer $authToken',
           'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
         },
       ),
-      attempts: 3,
+      attempts: 4,
+      retryServerErrors: true,
     );
 
     if (response.statusCode == 401) {
@@ -179,12 +206,24 @@ class ApiClient {
     Future<http.Response> Function() request, {
     int attempts = 1,
     Duration timeout = _requestTimeout,
+    bool retryServerErrors = false,
   }) async {
     Object? lastError;
+    http.Response? lastResponse;
 
     for (var attempt = 1; attempt <= attempts; attempt++) {
       try {
-        return await request().timeout(timeout);
+        final response = await request().timeout(timeout);
+        lastResponse = response;
+        if (!retryServerErrors ||
+            !_retryableStatusCodes.contains(response.statusCode) ||
+            attempt == attempts) {
+          return response;
+        }
+        lastError = ApiException(
+          'The attendance server is temporarily unavailable.',
+          network: true,
+        );
       } on TimeoutException catch (e) {
         lastError = e;
       } on SocketException catch (e) {
@@ -199,9 +238,12 @@ class ApiClient {
       }
 
       if (attempt < attempts) {
-        await Future<void>.delayed(Duration(milliseconds: 600 * attempt));
+        final delay = 500 * attempt * attempt;
+        await Future<void>.delayed(Duration(milliseconds: delay));
       }
     }
+
+    if (lastResponse != null) return lastResponse;
 
     throw ApiException(
       _networkMessage(lastError),
@@ -219,7 +261,8 @@ class ApiClient {
         text.contains('network is unreachable') ||
         text.contains('timed out') ||
         text.contains('timeout') ||
-        text.contains('handshake');
+        text.contains('handshake') ||
+        text.contains('clientexception');
   }
 
   String _networkMessage(Object? error) {
