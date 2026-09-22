@@ -49,21 +49,17 @@ class ApiClient {
     return raw;
   }
 
-  Future<Map<String, dynamic>> requestOtp(
-    String email,
-    String deviceUuid,
-  ) async {
+  Future<Map<String, dynamic>> accountStatus(String email) async {
     final baseUrl = await AppConfig.apiBaseUrl();
     final response = await _networkRequest(
       () => http.post(
-        Uri.parse('$baseUrl/auth/request-otp'),
+        Uri.parse('$baseUrl/auth/account-status'),
         headers: const {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: jsonEncode({
           'email': email.trim().toLowerCase(),
-          'device_uuid': deviceUuid,
         }),
       ),
       attempts: 1,
@@ -72,22 +68,22 @@ class ApiClient {
     return _decodeResponse(response);
   }
 
-  Future<Map<String, dynamic>> verifyOtp(
+  Future<Map<String, dynamic>> loginWithPassword(
     String email,
-    String otp,
+    String password,
     String deviceUuid,
   ) async {
     final baseUrl = await AppConfig.apiBaseUrl();
     final response = await _networkRequest(
       () => http.post(
-        Uri.parse('$baseUrl/auth/verify-otp'),
+        Uri.parse('$baseUrl/auth/login'),
         headers: const {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: jsonEncode({
           'email': email.trim().toLowerCase(),
-          'otp': otp.trim(),
+          'password': password,
           'device_uuid': deviceUuid,
           'platform': 'android',
           'app_version': AppConfig.appVersion,
@@ -97,6 +93,72 @@ class ApiClient {
     );
 
     final data = _decodeResponse(response);
+    await _saveAuthentication(data, email);
+    return data;
+  }
+
+  Future<Map<String, dynamic>> requestPasswordCode({
+    required String email,
+    required String password,
+    required String passwordConfirmation,
+    required String deviceUuid,
+    bool reset = false,
+  }) async {
+    final baseUrl = await AppConfig.apiBaseUrl();
+    final response = await _networkRequest(
+      () => http.post(
+        Uri.parse('$baseUrl/auth/password/request-code'),
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email.trim().toLowerCase(),
+          'password': password,
+          'password_confirmation': passwordConfirmation,
+          'device_uuid': deviceUuid,
+          'reset': reset,
+        }),
+      ),
+      attempts: 1,
+    );
+
+    return _decodeResponse(response);
+  }
+
+  Future<Map<String, dynamic>> confirmPasswordCode({
+    required String email,
+    required String verificationCode,
+    required String deviceUuid,
+  }) async {
+    final baseUrl = await AppConfig.apiBaseUrl();
+    final response = await _networkRequest(
+      () => http.post(
+        Uri.parse('$baseUrl/auth/password/confirm-code'),
+        headers: const {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'email': email.trim().toLowerCase(),
+          'verification_code': verificationCode.trim(),
+          'device_uuid': deviceUuid,
+          'platform': 'android',
+          'app_version': AppConfig.appVersion,
+        }),
+      ),
+      attempts: 1,
+    );
+
+    final data = _decodeResponse(response);
+    await _saveAuthentication(data, email);
+    return data;
+  }
+
+  Future<void> _saveAuthentication(
+    Map<String, dynamic> data,
+    String email,
+  ) async {
     final authToken = data['token']?.toString();
     if (authToken == null || authToken.isEmpty) {
       throw const ApiException('The server did not return a login token. Please try again.');
@@ -105,7 +167,6 @@ class ApiClient {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString('token', authToken);
     await preferences.setString('user_email', email.trim().toLowerCase());
-    return data;
   }
 
   Future<Map<String, dynamic>> getJson(String path) async {

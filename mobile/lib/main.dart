@@ -77,7 +77,7 @@ class AttendanceApp extends StatelessWidget {
           fillColor: Colors.white,
         ),
       ),
-      // Safe-start: always enter through the OTP screen. This prevents restored
+      // Safe-start: always enter through the login screen. This prevents restored
       // stale session data from eagerly booting Home/Profile on process start.
       home: const LoginScreen(),
     );
