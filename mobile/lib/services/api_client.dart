@@ -97,17 +97,16 @@ class ApiClient {
     return data;
   }
 
-  Future<Map<String, dynamic>> requestPasswordCode({
+  Future<Map<String, dynamic>> setPassword({
     required String email,
     required String password,
     required String passwordConfirmation,
     required String deviceUuid,
-    bool reset = false,
   }) async {
     final baseUrl = await AppConfig.apiBaseUrl();
     final response = await _networkRequest(
       () => http.post(
-        Uri.parse('$baseUrl/auth/password/request-code'),
+        Uri.parse('$baseUrl/auth/password/set'),
         headers: const {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -116,32 +115,6 @@ class ApiClient {
           'email': email.trim().toLowerCase(),
           'password': password,
           'password_confirmation': passwordConfirmation,
-          'device_uuid': deviceUuid,
-          'reset': reset,
-        }),
-      ),
-      attempts: 1,
-    );
-
-    return _decodeResponse(response);
-  }
-
-  Future<Map<String, dynamic>> confirmPasswordCode({
-    required String email,
-    required String verificationCode,
-    required String deviceUuid,
-  }) async {
-    final baseUrl = await AppConfig.apiBaseUrl();
-    final response = await _networkRequest(
-      () => http.post(
-        Uri.parse('$baseUrl/auth/password/confirm-code'),
-        headers: const {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email.trim().toLowerCase(),
-          'verification_code': verificationCode.trim(),
           'device_uuid': deviceUuid,
           'platform': 'android',
           'app_version': AppConfig.appVersion,

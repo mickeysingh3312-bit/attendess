@@ -1,14 +1,11 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../services/api_client.dart';
 import 'home_screen.dart';
 
-enum _LoginStep { email, password, createPassword, verify }
+enum _LoginStep { email, password, createPassword }
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,20 +18,14 @@ class _LoginScreenState extends State<LoginScreen> {
   final email = TextEditingController();
   final password = TextEditingController();
   final passwordConfirmation = TextEditingController();
-  final verificationCode = TextEditingController();
   final passwordFocus = FocusNode();
-  final verificationFocus = FocusNode();
 
   _LoginStep step = _LoginStep.email;
   String accountMode = '';
-  bool resetMode = false;
   bool busy = false;
   bool showPassword = false;
   bool showPasswordConfirmation = false;
   String? error;
-  int resend = 0;
-  int expires = 10;
-  Timer? timer;
 
   @override
   void initState() {
@@ -49,13 +40,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    timer?.cancel();
     email.dispose();
     password.dispose();
     passwordConfirmation.dispose();
-    verificationCode.dispose();
     passwordFocus.dispose();
-    verificationFocus.dispose();
     super.dispose();
   }
 
@@ -105,10 +93,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       setState(() {
         accountMode = mode;
-        resetMode = false;
         password.clear();
         passwordConfirmation.clear();
-        verificationCode.clear();
         step = mode == 'login'
             ? _LoginStep.password
             : _LoginStep.createPassword;
@@ -149,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> requestPasswordCode({bool again = false}) async {
+  Future<void> createPassword() async {
     FocusScope.of(context).unfocus();
     if (!validNewPassword) {
       setState(() => error =
@@ -167,62 +153,10 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final data = await ApiClient().requestPasswordCode(
+      await ApiClient().setPassword(
         email: email.text,
         password: password.text,
         passwordConfirmation: passwordConfirmation.text,
-        deviceUuid: await device(),
-        reset: resetMode,
-      );
-      if (!mounted) return;
-      setState(() {
-        step = _LoginStep.verify;
-        resend = int.tryParse(
-              data['retry_after_seconds']?.toString() ?? '',
-            ) ??
-            60;
-        expires = int.tryParse(
-              data['expires_in_minutes']?.toString() ?? '',
-            ) ??
-            10;
-        verificationCode.clear();
-      });
-      _startTimer();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) verificationFocus.requestFocus();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            again
-                ? 'A new verification code has been sent.'
-                : 'Check your email for the verification code.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (mounted) setState(() => error = _clean(e));
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
-  Future<void> confirmPasswordCode() async {
-    FocusScope.of(context).unfocus();
-    if (!RegExp(r'^\d{6}$').hasMatch(verificationCode.text.trim())) {
-      setState(() => error = 'Enter the 6-digit verification code.');
-      return;
-    }
-
-    setState(() {
-      busy = true;
-      error = null;
-    });
-
-    try {
-      await ApiClient().confirmPasswordCode(
-        email: email.text,
-        verificationCode: verificationCode.text,
         deviceUuid: await device(),
       );
       _openHome();
@@ -240,57 +174,32 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _startTimer() {
-    timer?.cancel();
-    timer = Timer.periodic(const Duration(seconds: 1), (value) {
-      if (!mounted) {
-        value.cancel();
-        return;
-      }
-      if (resend <= 1) {
-        value.cancel();
-        setState(() => resend = 0);
-      } else {
-        setState(() => resend--);
-      }
-    });
-  }
-
-  void startReset() {
-    setState(() {
-      step = _LoginStep.createPassword;
-      resetMode = true;
-      password.clear();
-      passwordConfirmation.clear();
-      error = null;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) passwordFocus.requestFocus();
-    });
-  }
-
   void changeEmail() {
-    timer?.cancel();
     setState(() {
       step = _LoginStep.email;
       accountMode = '';
-      resetMode = false;
       password.clear();
       passwordConfirmation.clear();
-      verificationCode.clear();
-      resend = 0;
       error = null;
     });
   }
 
-  void backFromReset() {
-    setState(() {
-      step = _LoginStep.password;
-      resetMode = false;
-      password.clear();
-      passwordConfirmation.clear();
-      error = null;
-    });
+  void passwordHelp() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset password'),
+        content: const Text(
+          'Contact your attendance administrator. They can enable password setup for your account, then you can create a new password in the app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   String _clean(Object value) => ApiClient.friendlyError(value).trim();
@@ -300,11 +209,8 @@ class _LoginScreenState extends State<LoginScreen> {
       case _LoginStep.password:
         return 'Welcome back';
       case _LoginStep.createPassword:
-        if (resetMode) return 'Reset your password';
         if (accountMode == 'register') return 'Create your account';
         return 'Create your password';
-      case _LoginStep.verify:
-        return 'Verify your email';
       case _LoginStep.email:
         return 'Sign in to continue';
     }
@@ -315,13 +221,10 @@ class _LoginScreenState extends State<LoginScreen> {
       case _LoginStep.password:
         return 'Enter your password to open attendance.';
       case _LoginStep.createPassword:
-        if (resetMode) return 'Choose a new password for your account.';
         if (accountMode == 'register') {
           return 'Create your login, then complete your Site Access Staff profile.';
         }
         return 'This is a one-time setup for your existing staff account.';
-      case _LoginStep.verify:
-        return 'Enter the code sent to ${email.text.trim().toLowerCase()}.';
       case _LoginStep.email:
         return 'Use your work email to sign in or register.';
     }
@@ -465,7 +368,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         TextButton(
-                          onPressed: busy ? null : startReset,
+                          onPressed: busy ? null : passwordHelp,
                           child: const Text('Forgot password?'),
                         ),
                       ],
@@ -474,7 +377,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 8),
                         passwordField(
                           controller: password,
-                          label: resetMode ? 'New password' : 'Create password',
+                          label: 'Create password',
                           visible: showPassword,
                           toggle: () =>
                               setState(() => showPassword = !showPassword),
@@ -490,7 +393,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   !showPasswordConfirmation),
                           action: TextInputAction.done,
                           submitted: () {
-                            if (!busy) requestPasswordCode();
+                            if (!busy) createPassword();
                           },
                         ),
                         const SizedBox(height: 8),
@@ -500,72 +403,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 14),
                         FilledButton.icon(
-                          onPressed: busy ? null : requestPasswordCode,
-                          icon: const Icon(Icons.mark_email_read_outlined),
+                          onPressed: busy ? null : createPassword,
+                          icon: const Icon(Icons.lock_open_outlined),
                           label: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             child: Text(
                               busy
-                                  ? 'Sending verification...'
-                                  : 'Verify email & continue',
+                                  ? 'Saving password...'
+                                  : 'Save password & continue',
                             ),
-                          ),
-                        ),
-                        if (resetMode)
-                          TextButton(
-                            onPressed: busy ? null : backFromReset,
-                            child: const Text('Back to sign in'),
-                          ),
-                      ],
-                      if (step == _LoginStep.verify) ...[
-                        accountTile(),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: verificationCode,
-                          focusNode: verificationFocus,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(6),
-                          ],
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 8,
-                          ),
-                          onSubmitted: (_) {
-                            if (!busy) confirmPasswordCode();
-                          },
-                          decoration: const InputDecoration(
-                            labelText: '6-digit code',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Code expires in $expires minutes.',
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 14),
-                        FilledButton.icon(
-                          onPressed: busy ? null : confirmPasswordCode,
-                          icon: const Icon(Icons.verified_user_outlined),
-                          label: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            child: Text(
-                              busy ? 'Verifying...' : 'Confirm & continue',
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: busy || resend > 0
-                              ? null
-                              : () => requestPasswordCode(again: true),
-                          child: Text(
-                            resend > 0
-                                ? 'Resend code in ${resend}s'
-                                : 'Resend verification code',
                           ),
                         ),
                       ],
