@@ -3,9 +3,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'screens/login_screen.dart';
+import 'utils/sydney_time.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  initializeSydneyTime();
 
   // Keep framework/async Dart errors inside Flutter instead of allowing an
   // unexpected screen initialization problem to terminate the user flow.

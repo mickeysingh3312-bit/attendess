@@ -7,6 +7,7 @@ import '../models/project.dart';
 import '../services/api_client.dart';
 import '../services/device_bridge.dart';
 import '../services/geofence_bridge.dart';
+import '../utils/sydney_time.dart';
 import 'attendance_history_screen.dart';
 import 'login_screen.dart';
 import 'site_staff_profile_screen.dart';
@@ -50,12 +51,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       email = preferences.getString('user_email');
-      lastSync = savedSync == null ? null : DateTime.tryParse(savedSync)?.toLocal();
+      lastSync = SydneyTime.parse(savedSync);
     });
   }
 
   Future<void> _markSynced() async {
-    final now = DateTime.now();
+    final now = SydneyTime.now();
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString('last_server_sync_at', now.toUtc().toIso8601String());
     if (mounted) setState(() => lastSync = now);
@@ -173,15 +174,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   String greeting() {
-    final hour = DateTime.now().hour;
+    final hour = SydneyTime.now().hour;
     if (hour < 12) return 'Good morning';
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
   }
 
   DateTime? _date(Object? value) {
-    if (value == null) return null;
-    return DateTime.tryParse(value.toString())?.toLocal();
+    return SydneyTime.parse(value);
   }
 
   String _time(Object? value) {
@@ -194,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   String _duration(DateTime? start) {
     if (start == null) return '—';
-    final difference = DateTime.now().difference(start);
+    final difference = SydneyTime.now().difference(start);
     final seconds = difference.inSeconds < 0 ? 0 : difference.inSeconds;
     final hours = seconds ~/ 3600;
     final minutes = (seconds % 3600) ~/ 60;
@@ -203,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   String _relativeSync() {
     if (lastSync == null) return 'Not synced yet';
-    final difference = DateTime.now().difference(lastSync!);
+    final difference = SydneyTime.now().difference(lastSync!);
     if (difference.inSeconds < 30) return 'Just now';
     if (difference.inMinutes < 2) return '1 minute ago';
     if (difference.inMinutes < 60) return '${difference.inMinutes} minutes ago';

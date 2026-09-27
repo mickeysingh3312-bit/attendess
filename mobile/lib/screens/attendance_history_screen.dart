@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
+import '../utils/sydney_time.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
   const AttendanceHistoryScreen({super.key});
@@ -73,8 +74,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   String _two(int value) => value.toString().padLeft(2, '0');
 
   DateTime? _date(Object? value) {
-    if (value == null) return null;
-    return DateTime.tryParse(value.toString())?.toLocal();
+    return SydneyTime.parse(value);
   }
 
   String _time(Object? value) {
@@ -88,7 +88,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   String _day(Object? value) {
     final date = _date(value);
     if (date == null) return 'Unknown date';
-    final now = DateTime.now();
+    final now = SydneyTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final sessionDay = DateTime(date.year, date.month, date.day);
     if (sessionDay == today) return 'Today';
@@ -166,6 +166,14 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                   Text(
                     '${sessions.length} ${sessions.length == 1 ? 'site visit' : 'site visits'}',
                     style: TextStyle(color: colors.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Times shown in Sydney (AEST/AEDT)',
+                    style: TextStyle(
+                      color: colors.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),

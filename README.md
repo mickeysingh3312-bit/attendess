@@ -17,6 +17,8 @@ Automatic site attendance system using Airtable project locations, mobile geofen
 5. EXIT events are verified/delayed before final automatic checkout to reduce false GPS transitions.
 6. Attendance appears in the web portal and can later be exported for reporting/payroll.
 
+All attendance dates and times are displayed in `Australia/Sydney`, including automatic AEST/AEDT daylight-saving changes.
+
 ## Mobile authentication
 
 - Staff enter their email first.
