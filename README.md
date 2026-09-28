@@ -19,6 +19,8 @@ Automatic site attendance system using Airtable project locations, mobile geofen
 
 All attendance dates and times are displayed in `Australia/Sydney`, including automatic AEST/AEDT daylight-saving changes.
 
+The Android app sends periodic location heartbeats so newly activated nearby projects are detected while the user is already on site. The backend can close an open session after heartbeats stop, preventing an uninstall from leaving a permanent on-site status.
+
 ## Mobile authentication
 
 - Staff enter their email first.

@@ -5,11 +5,16 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -50,6 +55,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deviceChannelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "status" -> result.success(permissionStatus())
+                "currentLocation" -> currentLocation(result)
                 "requestFineLocation" -> requestPermission(
                     arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
                     4101,
@@ -207,6 +213,50 @@ class MainActivity : FlutterActivity() {
         permissionResult = result
         permissionRequestCode = requestCode
         ActivityCompat.requestPermissions(this, permissions, requestCode)
+    }
+
+    private fun currentLocation(result: MethodChannel.Result) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            result.error("LOCATION_PERMISSION", "Precise location permission is required", null)
+            return
+        }
+
+        val cancellation = CancellationTokenSource()
+        val handler = Handler(Looper.getMainLooper())
+        var completed = false
+        val timeout = Runnable {
+            if (completed) return@Runnable
+            completed = true
+            cancellation.cancel()
+            result.error("LOCATION_TIMEOUT", "A current GPS location was not available", null)
+        }
+        handler.postDelayed(timeout, 15000)
+
+        LocationServices.getFusedLocationProviderClient(this)
+            .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellation.token)
+            .addOnSuccessListener { location ->
+                if (completed) return@addOnSuccessListener
+                completed = true
+                handler.removeCallbacks(timeout)
+                if (location == null) {
+                    result.error("LOCATION_UNAVAILABLE", "A current GPS location was not available", null)
+                } else {
+                    result.success(
+                        mapOf(
+                            "latitude" to location.latitude,
+                            "longitude" to location.longitude,
+                            "accuracy" to location.accuracy.toDouble(),
+                            "recordedAtMillis" to location.time,
+                        ),
+                    )
+                }
+            }
+            .addOnFailureListener { error ->
+                if (completed) return@addOnFailureListener
+                completed = true
+                handler.removeCallbacks(timeout)
+                result.error("LOCATION_UNAVAILABLE", error.message ?: "Unable to read current location", null)
+            }
     }
 
     private fun permissionStatus(): Map<String, Boolean> {

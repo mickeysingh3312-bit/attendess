@@ -93,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         } catch (_) {}
         if (mounted) tab = 2;
       } else if (permissions?.ready == true) {
+        await refreshFromCurrentLocation();
         await registerGeofences();
       }
     } catch (e) {
@@ -127,6 +128,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       bearerToken: token,
       deviceUuid: device,
     );
+  }
+
+  Future<void> refreshFromCurrentLocation() async {
+    final preferences = await SharedPreferences.getInstance();
+    final deviceUuid = preferences.getString('device_uuid');
+    if (deviceUuid == null || deviceUuid.isEmpty || data == null) return;
+
+    try {
+      final location = await DeviceBridge().currentLocation();
+      final snapshot = await ApiClient().locationSnapshot(
+        deviceUuid: deviceUuid,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracy,
+        recordedAt: location.recordedAt,
+      );
+      data!['projects'] = snapshot['projects'] ?? const [];
+      data!['open_sessions'] = snapshot['open_sessions'] ?? const [];
+      final config = data!['config'];
+      if (config is Map && snapshot['geofence_revision'] != null) {
+        config['geofence_revision'] = snapshot['geofence_revision'];
+      }
+    } catch (_) {
+      // Android geofencing still remains active if a fresh GPS fix is temporarily unavailable.
+    }
   }
 
   Future<void> refreshPermissions({bool register = false}) async {

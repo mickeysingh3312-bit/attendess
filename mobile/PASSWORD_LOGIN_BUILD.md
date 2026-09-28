@@ -1,6 +1,6 @@
 # Mobile Password Login Build
 
-Version: `0.6.2+14`
+Version: `0.6.3+15`
 
 Deploy the Laravel password-login backend and run its migration before distributing this mobile build.
 
@@ -22,4 +22,4 @@ flutter analyze --no-fatal-infos
 flutter build apk --release
 ```
 
-Pushing the updated `mobile/` source to the repository's `main` branch also triggers the Android APK workflow. The generated artifact is named `five-star-attendance-v0.6.2-sydney-time`.
+Pushing the updated `mobile/` source to the repository's `main` branch also triggers the Android APK workflow. The generated artifact is named `five-star-attendance-v0.6.3-location-recovery`.

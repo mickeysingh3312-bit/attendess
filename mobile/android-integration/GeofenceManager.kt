@@ -23,10 +23,11 @@ class GeofenceManager(private val context: Context) {
     fun register(projects: List<Map<String, Any>>, baseUrl: String, token: String, deviceUuid: String, result: MethodChannel.Result) {
         if (!hasRequiredLocationPermissions()) { result.error("LOCATION_PERMISSION", "Precise and background location permissions are required", null); return }
         persistConfiguration(projects, baseUrl, token, deviceUuid)
+        AttendanceHeartbeatWorker.schedule(context)
         registerInternal(projects, { result.success(true) }, { result.error("GEOFENCE_REGISTER", it.message, null) })
     }
-    fun registerSaved() { if (!hasRequiredLocationPermissions()) return; val raw = prefs.getString(KEY_PROJECTS, null) ?: return; registerInternal(decodeProjects(raw), {}, {}) }
-    fun clear(result: MethodChannel.Result) { prefs.edit().remove(KEY_PROJECTS).apply(); client.removeGeofences(pendingIntent).addOnSuccessListener { result.success(true) }.addOnFailureListener { result.error("GEOFENCE_CLEAR", it.message, null) } }
+    fun registerSaved() { if (!hasRequiredLocationPermissions()) return; val raw = prefs.getString(KEY_PROJECTS, null) ?: return; AttendanceHeartbeatWorker.schedule(context); registerInternal(decodeProjects(raw), {}, {}) }
+    fun clear(result: MethodChannel.Result) { AttendanceHeartbeatWorker.cancel(context); prefs.edit().remove(KEY_PROJECTS).apply(); client.removeGeofences(pendingIntent).addOnSuccessListener { result.success(true) }.addOnFailureListener { result.error("GEOFENCE_CLEAR", it.message, null) } }
     private fun registerInternal(projects: List<Map<String, Any>>, ok: () -> Unit, fail: (Exception) -> Unit) {
         val geofences = projects.take(95).mapNotNull { p ->
             val id = (p["id"] as? Number)?.toInt() ?: return@mapNotNull null

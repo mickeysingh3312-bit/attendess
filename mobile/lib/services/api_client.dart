@@ -168,6 +168,45 @@ class ApiClient {
     return _decodeResponse(response);
   }
 
+  Future<Map<String, dynamic>> locationSnapshot({
+    required String deviceUuid,
+    required double latitude,
+    required double longitude,
+    required double accuracy,
+    required DateTime recordedAt,
+  }) async {
+    final authToken = await token();
+    if (authToken == null || authToken.isEmpty) {
+      throw const ApiException('Please sign in again.');
+    }
+
+    final baseUrl = await AppConfig.apiBaseUrl();
+    final response = await _networkRequest(
+      () => http.post(
+        Uri.parse('$baseUrl/location-snapshot'),
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'device_uuid': deviceUuid,
+          'recorded_at': recordedAt.toUtc().toIso8601String(),
+          'latitude': latitude,
+          'longitude': longitude,
+          'accuracy_m': accuracy,
+        }),
+      ),
+      attempts: 2,
+      retryServerErrors: true,
+    );
+
+    if (response.statusCode == 401) {
+      throw const ApiException('Your session has expired. Please sign in again.');
+    }
+    return _decodeResponse(response);
+  }
+
   Future<Map<String, dynamic>> getJsonCached(
     String path, {
     required String cacheKey,
