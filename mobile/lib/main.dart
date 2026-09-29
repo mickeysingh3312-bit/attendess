@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'screens/login_screen.dart';
+import 'screens/app_update_gate.dart';
 import 'utils/sydney_time.dart';
 
 void main() {
@@ -81,7 +82,7 @@ class AttendanceApp extends StatelessWidget {
       ),
       // Safe-start: always enter through the login screen. This prevents restored
       // stale session data from eagerly booting Home/Profile on process start.
-      home: const LoginScreen(),
+      home: const AppUpdateGate(child: LoginScreen()),
     );
   }
 }
