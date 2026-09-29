@@ -1,6 +1,10 @@
 package au.com.fivestaraccess.five_star_attendance
 
 import android.Manifest
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -25,10 +29,13 @@ class MainActivity : FlutterActivity() {
     private val geofenceChannelName = "five_star_attendance/geofence"
     private val deviceChannelName = "five_star_attendance/device"
     private val documentChannelName = "five_star_attendance/document"
+    private val updaterChannelName = "five_star_attendance/updater"
     private var permissionResult: MethodChannel.Result? = null
     private var permissionRequestCode: Int = 0
     private var documentResult: MethodChannel.Result? = null
     private val documentRequestCode = 4201
+    private var updateDownloadId: Long? = null
+    private var downloadReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -109,6 +116,78 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "downloadAndInstall" -> startUpdateDownload(
+                    call.argument<String>("url")?.trim().orEmpty(),
+                    call.argument<String>("fileName")?.trim().orEmpty(),
+                    result,
+                )
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun startUpdateDownload(url: String, requestedName: String, result: MethodChannel.Result) {
+        if (url.isEmpty()) {
+            result.error("UPDATE_URL", "The update URL is empty", null)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            result.error("INSTALL_PERMISSION", "Allow app installation, then tap Update now again", null)
+            return
+        }
+
+        try {
+            val safeName = requestedName.ifEmpty { "five-star-attendance-update.apk" }
+                .replace(Regex("[^A-Za-z0-9._-]"), "-")
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                setTitle("Five Star Attendance update")
+                setDescription("Downloading $safeName")
+                setMimeType("application/vnd.android.package-archive")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, safeName)
+            }
+            val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            updateDownloadId = manager.enqueue(request)
+            ensureDownloadReceiver()
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("UPDATE_DOWNLOAD", e.message ?: "Unable to download update", null)
+        }
+    }
+
+    private fun ensureDownloadReceiver() {
+        if (downloadReceiver != null) return
+        downloadReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                if (completedId != updateDownloadId) return
+                val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                val apkUri = manager.getUriForDownloadedFile(completedId) ?: return
+                startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(apkUri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+        }
+        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(downloadReceiver, filter)
+        }
+    }
+
+    override fun onDestroy() {
+        downloadReceiver?.let {
+            try { unregisterReceiver(it) } catch (_: Exception) {}
+        }
+        downloadReceiver = null
+        super.onDestroy()
     }
 
     private fun pickDocument(result: MethodChannel.Result) {
