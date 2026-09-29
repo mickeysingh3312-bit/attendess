@@ -86,7 +86,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: five-star-attendance-v0.6.3-location-recovery
+          name: five-star-attendance-v0.7.0-in-app-updater
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
